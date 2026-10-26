@@ -48,3 +48,8 @@ coverage/
 .kube/
 debug.log
 wordpress-backup.sql
+mariadb-backup.sql
+platform-backup.sql
+platform-rendered.yaml
+rendered.yaml
+compose.yaml
