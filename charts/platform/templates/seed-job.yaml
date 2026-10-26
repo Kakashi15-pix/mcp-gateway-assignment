@@ -1,0 +1,79 @@
+{{- if .Values.seed.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "platform.fullname" . }}-seed
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seed
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        {{- include "platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: seed
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+       runAsUser: 10001
+       runAsGroup: 10001
+       seccompProfile:
+        type: RuntimeDefault
+      containers:
+        - name: seed
+          image: {{ .Values.seed.image.repository }}:{{ .Values.seed.image.tag }}
+          imagePullPolicy: {{ .Values.seed.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          command: ["python", "/scripts/seed.py"]
+          env:
+            - name: GATEWAY_URL
+              value: http://{{ include "platform.fullname" . }}-gateway:{{ .Values.gateway.port }}
+            - name: WOO_URL
+              value: http://{{ include "platform.fullname" . }}-woo-mcp:{{ .Values.woo.port }}/mcp
+            - name: FS_URL
+              value: http://{{ include "platform.fullname" . }}-filesystem-mcp:{{ .Values.filesystem.port }}/mcp
+            - name: K8S_URL
+              value: http://{{ include "platform.fullname" . }}-kubernetes-mcp:{{ .Values.kubernetes.port }}/mcp
+
+            - name: ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.adminSecret" . }}
+                  key: ADMIN_EMAIL
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.adminSecret" . }}
+                  key: ADMIN_PASSWORD
+
+            - name: DB_USER
+              value: {{ .Values.postgres.username | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.postgresSecret" . }}
+                  key: {{ .Values.postgres.secretKeys.password }}
+            - name: DB_HOST
+              value: {{ include "platform.fullname" . }}-postgres
+            - name: DB_PORT
+              value: {{ .Values.postgres.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.postgres.database | quote }}      
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+          resources:
+            {{- toYaml (index .Values.resources .Values.seed.resources) | nindent 12 }}
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ include "platform.fullname" . }}-seed
+{{- end }}

@@ -1,0 +1,126 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "platform.fullname" . }}-gateway
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "platform.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+  ports:
+    - name: http
+      port: {{ .Values.gateway.port }}
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "platform.fullname" . }}-gateway
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+  selector:
+    matchLabels:
+      {{- include "platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: gateway
+  template:
+    metadata:
+      labels:
+        {{- include "platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: gateway
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: migrate
+          image: {{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag }}
+          imagePullPolicy: {{ .Values.images.gateway.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          env:
+            - name: DB_USER
+              value: {{ .Values.postgres.username | quote }}
+            - name: DB_NAME
+              value: {{ .Values.postgres.database | quote }}
+            - name: DB_HOST
+              value: {{ include "platform.fullname" . }}-postgres
+            - name: DB_PORT
+              value: {{ .Values.postgres.port | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.postgresSecret" . }}
+                  key: {{ .Values.postgres.secretKeys.password }}
+          command: ["sh", "-c"]
+          args:
+            - >-
+              until python -c "import socket; socket.create_connection(('${DB_HOST}', int('${DB_PORT}')), 2).close()"
+              >/dev/null 2>&1; do sleep 2; done;
+              alembic upgrade head
+          resources:
+            {{- toYaml .Values.resources.small | nindent 12 }}
+      containers:
+        - name: gateway
+          image: {{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag }}
+          imagePullPolicy: {{ .Values.images.gateway.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          ports:
+            - name: http
+              containerPort: {{ .Values.gateway.port }}
+          env:
+            - name: MCP_PUBLIC_HOSTS
+              value: {{ .Values.gateway.publicHosts | default "" | quote }}
+            - name: DB_USER
+              value: {{ .Values.postgres.username | quote }}
+            - name: DB_NAME
+              value: {{ .Values.postgres.database | quote }}
+            - name: DB_HOST
+              value: {{ include "platform.fullname" . }}-postgres
+            - name: DB_PORT
+              value: {{ .Values.postgres.port | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.postgresSecret" . }}
+                  key: {{ .Values.postgres.secretKeys.password }}
+            - name: DATABASE_URL
+              value: postgresql+psycopg://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)
+            - name: MCP_ALLOWED_HOSTS
+              value: {{ printf "%s-woo-mcp,%s-filesystem-mcp,%s-kubernetes-mcp" (include "platform.fullname" .) (include "platform.fullname" .) (include "platform.fullname" .) | quote }}
+            - name: DASHBOARD_BASE_URL
+              value: {{ .Values.gateway.dashboardBaseUrl | quote }}
+            - name: SESSION_TTL_MINUTES
+              value: {{ .Values.gateway.sessionTtlMinutes | quote }}
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.gateway.llm.existingSecret | default "platform-llm" }}
+                  key: {{ .Values.gateway.llm.keys.apiKey }}
+                  optional: true
+            - name: LLM_BASE_URL
+              value: {{ .Values.gateway.llm.baseUrl | quote }}
+            - name: LLM_MODEL
+              value: {{ .Values.gateway.llm.model | quote }}
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            {{- toYaml (index .Values.resources .Values.gateway.resources) | nindent 12 }}

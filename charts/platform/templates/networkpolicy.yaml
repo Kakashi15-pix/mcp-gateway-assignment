@@ -1,0 +1,82 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "platform.fullname" . }}-mcp
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [woo-mcp, filesystem-mcp, kubernetes-mcp]
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "platform.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: gateway
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "platform.fullname" . }}-postgres
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "platform.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: gateway
+        - podSelector:
+            matchLabels:
+              {{- include "platform.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: seed
+      ports:
+        - protocol: TCP
+          port: {{ .Values.postgres.port }}
+---
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "platform.fullname" . }}-edge
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [gateway, dashboard]
+  policyTypes: [Ingress]
+  ingress:
+    # Allow dashboard-to-gateway traffic.
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "platform.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: dashboard
+      ports:
+        - protocol: TCP
+          port: {{ .Values.gateway.port }}
+
+    # Allow seed Job to reach gateway readiness and API endpoints.
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "platform.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: seed
+      ports:
+        - protocol: TCP
+          port: {{ .Values.gateway.port }}
+
+    # Preserve ingress-controller access.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace | quote }}
+              {{- end }}

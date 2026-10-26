@@ -1,0 +1,109 @@
+{{- $full := include "platform.fullname" . -}}
+{{- range $key, $cfg := dict "woo" .Values.woo "filesystem" .Values.filesystem "kubernetes" .Values.kubernetes }}
+{{- $component := printf "%s-mcp" $key }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-{{ $component }}
+  labels:
+    {{- include "platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "platform.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+  ports:
+    - name: http
+      port: {{ $cfg.port }}
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-{{ $component }}
+  labels:
+    {{- include "platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  replicas: {{ $cfg.replicas }}
+  selector:
+    matchLabels:
+      {{- include "platform.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $component }}
+  template:
+    metadata:
+      labels:
+        {{- include "platform.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $component }}
+    spec:
+      automountServiceAccountToken: {{ eq $key "kubernetes" }}
+      serviceAccountName: {{ if eq $key "kubernetes" }}{{ $full }}-kubernetes{{ else }}{{ include "platform.serviceAccount" $ }}{{ end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      {{- if eq $key "woo" }}
+      hostAliases:
+        - ip: {{ required "set woo.wordpressIp to the store-wordpress Service cluster IP" $.Values.woo.wordpressIp | quote }}
+          hostnames:
+            - {{ $.Values.woo.publicHost | quote }}
+      {{- end }}
+      containers:
+        - name: {{ $key }}
+          image: {{ if eq $key "woo" }}{{ $.Values.images.woo.repository }}:{{ $.Values.images.woo.tag }}{{ else if eq $key "filesystem" }}{{ $.Values.images.filesystem.repository }}:{{ $.Values.images.filesystem.tag }}{{ else }}{{ $.Values.images.kubernetes.repository }}:{{ $.Values.images.kubernetes.tag }}{{ end }}
+          imagePullPolicy: {{ if eq $key "woo" }}{{ $.Values.images.woo.pullPolicy }}{{ else if eq $key "filesystem" }}{{ $.Values.images.filesystem.pullPolicy }}{{ else }}{{ $.Values.images.kubernetes.pullPolicy }}{{ end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          ports:
+            - name: http
+              containerPort: {{ $cfg.port }}
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: {{ $cfg.port | quote }}
+            - name: ALLOWED_HOSTS
+              value: {{ printf "%s-%s:*" $full $component | quote }}
+            {{- if eq $key "woo" }}
+            - name: WC_STORE_URL
+              value: {{ printf "http://%s" $.Values.woo.publicHost | quote }}
+            - name: WC_CONSUMER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.woo.secretName }}
+                  key: {{ $.Values.woo.secretKeys.consumerKey }}
+            - name: WC_CONSUMER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.woo.secretName }}
+                  key: {{ $.Values.woo.secretKeys.consumerSecret }}
+            {{- else if eq $key "filesystem" }}
+            - name: FS_ROOT
+              value: /data
+            {{- end }}
+          {{- if eq $key "filesystem" }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          {{- end }}
+          readinessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            {{- toYaml (index $.Values.resources $cfg.resources) | nindent 12 }}
+      {{- if eq $key "filesystem" }}
+      volumes:
+        - name: data
+          emptyDir: {}
+      {{- end }}
+---
+{{- end }}

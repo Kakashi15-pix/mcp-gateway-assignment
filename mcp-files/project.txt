@@ -1,0 +1,4 @@
+Project: MCP Gateway
+Status: In Development
+Component: WooCommerce MCP Server
+Port: 8000

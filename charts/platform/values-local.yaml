@@ -1,0 +1,29 @@
+images:
+  gateway: { repository: mcp-gateway, tag: "host6", pullPolicy: IfNotPresent }
+  dashboard: { repository: mcp-dashboard, tag: "dev", pullPolicy: IfNotPresent }
+  woo: { repository: woo-mcp, tag: "dev", pullPolicy: IfNotPresent }
+  filesystem: { repository: filesystem-mcp, tag: "dev", pullPolicy: IfNotPresent }
+  kubernetes: { repository: kubernetes-mcp, tag: "dev", pullPolicy: IfNotPresent }
+  postgres: { repository: postgres, tag: "16.4", pullPolicy: IfNotPresent }
+
+postgres:
+  persistence:
+    size: 2Gi
+    storageClass: ""
+
+gateway:
+  dashboardBaseUrl: http://dashboard.localhost
+  publicHosts: "dashboard.localhost"
+  llm:
+    baseUrl: https://api.groq.com/openai/v1
+    model: openai/gpt-oss-20b
+    existingSecret: platform-llm
+    keys:
+      apiKey: LLM_API_KEY
+
+woo:
+  publicHost: shop.localhost
+  wordpressIp: "10.107.208.185"
+
+ingress:
+  host: dashboard.localhost

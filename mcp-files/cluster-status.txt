@@ -1,0 +1,6 @@
+Service: Kubernetes Health MCP
+Cluster: Minikube
+Status: Healthy
+Node: minikube
+Ready: True
+Total Pods: 11

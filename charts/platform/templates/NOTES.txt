@@ -1,0 +1,16 @@
+Platform was installed in namespace {{ .Release.Namespace }}.
+
+Admin email:
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "platform.adminSecret" . }} -o jsonpath='{.data.ADMIN_EMAIL}' | base64 -d; echo
+
+Admin password:
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "platform.adminSecret" . }} -o jsonpath='{.data.ADMIN_PASSWORD}' | base64 -d; echo
+
+Dashboard:
+  http{{ if .Values.gateway.dashboardBaseUrl | contains "https://" }}s{{ end }}://{{ .Values.ingress.host }}/
+
+Gateway MCP endpoint:
+  http{{ if .Values.gateway.dashboardBaseUrl | contains "https://" }}s{{ end }}://{{ .Values.ingress.host }}/mcp
+
+Local hosts entry:
+  127.0.0.1 {{ .Values.ingress.host }}

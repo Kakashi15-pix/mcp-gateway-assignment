@@ -1,0 +1,15 @@
+.env
+.venv*/
+.venv-*/
+__pycache__/
+*.py[cod]
+*.log
+*.sql
+.git/
+dashboard/node_modules/
+dashboard/dist/
+gateway/.venv-gateway/
+charts/
+*.md
+Dockerfile*
+!.dockerignore

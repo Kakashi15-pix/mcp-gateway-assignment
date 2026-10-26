@@ -1,0 +1,106 @@
+replicaCount: 1
+
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullSecrets: []
+
+wordpress:
+  image:
+    repository: wordpress
+    tag: "7.1.3-apache"
+    pullPolicy: IfNotPresent
+  service:
+    port: 80
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+  persistence:
+    size: 5Gi
+    storageClass: ""
+  # The stock WordPress Apache image starts as root. Accepted exception, see the threat model note.
+  securityContext:
+    runAsNonRoot: false
+  admin:
+    username: admin
+    email: admin@example.invalid
+    siteTitle: WooCommerce Store
+    siteUrl: ""
+  serviceAccount:
+    create: true
+    name: ""
+
+mariadb:
+  image:
+    repository: mariadb
+    tag: "11.4"
+    pullPolicy: IfNotPresent
+  service:
+    port: 3306
+  persistence:
+    size: 5Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+  database: wordpress
+  username: wordpress
+
+secrets:
+  # Set to the name of a Secret you created yourself to skip generation (production).
+  existingSecret: ""
+  keys:
+    mariadbRootPassword: mariadb-root-password
+    mariadbPassword: mariadb-password
+    wordpressAdminPassword: wordpress-admin-password
+    # Key names inside the <release>-wc-api Secret that the bootstrap Job writes.
+    consumerKey: woocommerce-consumer-key
+    consumerSecret: woocommerce-consumer-secret
+  # Optional fixed values. Leave empty to generate random ones.
+  mariadbRootPassword: ""
+  mariadbPassword: ""
+  wordpressAdminPassword: ""
+
+bootstrap:
+  image:
+    repository: wordpress
+    tag: "cli-php8.3"
+    pullPolicy: IfNotPresent
+  serviceAccount:
+    create: true
+    name: ""
+  hookDeletePolicy: before-hook-creation
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+  kubectl:
+    image:
+      repository: alpine/k8s
+      tag: "1.31.2"
+      pullPolicy: IfNotPresent
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { cpu: 100m, memory: 128Mi }
+  samplePages:
+    - { title: Shop, slug: shop, content: "Browse our products." }
+    - { title: Cart, slug: cart, content: "Your cart." }
+    - { title: Checkout, slug: checkout, content: "Complete your purchase." }
+    - { title: My account, slug: my-account, content: "Manage your account." }
+
+ingress:
+  enabled: true
+  className: nginx
+  host: store.localhost
+  annotations: {}
+  tls: []
+
+networkPolicy:
+  enabled: true

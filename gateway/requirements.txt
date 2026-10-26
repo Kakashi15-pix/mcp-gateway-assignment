@@ -1,0 +1,8 @@
+SQLAlchemy>=2.0
+Alembic>=1.13
+psycopg[binary]>=3.2
+python-dotenv>=1.0
+bcrypt>=4.1
+mcp
+fastapi>=0.115
+uvicorn[standard]>=0.30

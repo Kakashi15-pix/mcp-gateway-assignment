@@ -1,0 +1,50 @@
+﻿# Environment variables and secrets
+.env
+.env.*
+!.env.example
+!.env.template
+
+# Python virtual environments
+.venv/
+venv/
+env/
+.venv-*/
+__pycache__/
+*.py[cod]
+
+# Python tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# IDE and operating system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local databases
+*.sqlite
+*.sqlite3
+*.db
+
+# Node.js dependencies and build output
+node_modules/
+dist/
+build/
+
+# Local test artifacts
+test-results/
+coverage/
+
+# Kubernetes local configuration
+.kube/
+debug.log
+wordpress-backup.sql

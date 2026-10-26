@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 240 10% 4%;
+  --foreground: 240 5% 96%;
+  --card: 240 10% 7%;
+  --muted: 240 4% 16%;
+  --border: 240 4% 18%;
+  --primary: 189 94% 43%;
+  --destructive: 0 72% 51%;
+}
+
+* { @apply border-border; }
+body { @apply min-h-screen bg-background text-foreground antialiased; }
+button, input, select, textarea { @apply outline-none; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  @apply ring-2 ring-primary ring-offset-2 ring-offset-background;
+}
+
+input, select, textarea {
+  color-scheme: dark;
+}
+
+select option {
+  @apply bg-card text-foreground;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: hsl(var(--foreground));
+  box-shadow: 0 0 0 1000px hsl(var(--card)) inset;
+  transition: background-color 9999s ease-in-out 0s;
+}

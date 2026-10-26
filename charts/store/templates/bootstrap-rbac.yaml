@@ -1,0 +1,38 @@
+{{- if .Values.bootstrap.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "store.bootstrapServiceAccount" . }}
+  labels:
+    {{- include "store.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "store.fullname" . }}-bootstrap
+  labels:
+    {{- include "store.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [{{ printf "%s-wc-api" (include "store.fullname" .) | quote }}]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "store.fullname" . }}-bootstrap
+  labels:
+    {{- include "store.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "store.bootstrapServiceAccount" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "store.fullname" . }}-bootstrap
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

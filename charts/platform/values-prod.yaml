@@ -1,0 +1,35 @@
+images:
+  gateway: { repository: ghcr.io/example/mcp-gateway, tag: "1.0.0", pullPolicy: IfNotPresent }
+  dashboard: { repository: ghcr.io/example/mcp-dashboard, tag: "1.0.0", pullPolicy: IfNotPresent }
+  woo: { repository: ghcr.io/example/woo-mcp, tag: "1.0.0", pullPolicy: IfNotPresent }
+  filesystem: { repository: ghcr.io/example/filesystem-mcp, tag: "1.0.0", pullPolicy: IfNotPresent }
+  kubernetes: { repository: ghcr.io/example/kubernetes-mcp, tag: "1.0.0", pullPolicy: IfNotPresent }
+  postgres: { repository: postgres, tag: "16.4", pullPolicy: IfNotPresent }
+
+dashboard:
+  # Cluster DNS Service IP. k3s default is 10.43.0.10, Minikube is 10.96.0.10.
+  # Check with: kubectl get svc kube-dns -n kube-system -o jsonpath='{.spec.clusterIP}'
+  dnsResolver: "10.43.0.10"
+
+postgres:
+  existingSecret: platform-postgres
+  persistence:
+    size: 20Gi
+    storageClass: fast
+
+gateway:
+  dashboardBaseUrl: https://dashboard.example.invalid
+  llm:
+    existingSecret: platform-llm
+
+woo:
+  publicHost: store.example.invalid
+
+ingress:
+  host: dashboard.example.invalid
+
+seed:
+  image:
+    repository: ghcr.io/example/mcp-gateway
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent

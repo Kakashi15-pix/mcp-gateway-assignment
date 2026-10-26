@@ -1,0 +1,20 @@
+WooCommerce store installed.
+
+Store URL:
+  http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}
+
+Verify the workloads:
+  kubectl -n {{ .Release.Namespace }} get pods,svc,ingress
+  kubectl -n {{ .Release.Namespace }} get statefulset {{ include "store.fullname" . }}-mariadb
+  kubectl -n {{ .Release.Namespace }} get deployment {{ include "store.fullname" . }}-wordpress
+
+Verify bootstrap:
+  kubectl -n {{ .Release.Namespace }} get jobs
+  kubectl -n {{ .Release.Namespace }} logs job/{{ include "store.fullname" . }}-bootstrap -c wordpress-bootstrap
+
+Verify the REST credentials Secret exists:
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "store.secretName" . }}
+
+For Minikube:
+  minikube addons enable ingress
+  minikube tunnel

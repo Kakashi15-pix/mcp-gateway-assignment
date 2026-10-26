@@ -1,0 +1,28 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "store.fullname" . }}-mariadb
+  labels:
+    {{- include "store.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "store.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mariadb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "store.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: wordpress
+        - podSelector:
+            matchLabels:
+              {{- include "store.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: bootstrap
+      ports:
+        - protocol: TCP
+          port: 3306
+{{- end }}

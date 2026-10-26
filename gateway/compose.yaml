@@ -1,0 +1,28 @@
+
+services:
+  gateway-db:
+    image: postgres:16
+    container_name: mcp-gateway-db
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${DB_NAME:-mcp_gateway}
+      POSTGRES_USER: ${DB_USER:-gateway_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in the environment}
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - gateway_db_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  gateway_db_data:

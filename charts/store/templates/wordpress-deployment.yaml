@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "store.fullname" . }}-wordpress
+  labels:
+    {{- include "store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: wordpress
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "store.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: wordpress
+  template:
+    metadata:
+      labels:
+        {{- include "store.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: wordpress
+    spec:
+      serviceAccountName: {{ include "store.wordpressServiceAccount" . }}
+      securityContext:
+        {{- toYaml .Values.wordpress.securityContext | nindent 8 }}
+      containers:
+        - name: wordpress
+          image: "{{ .Values.wordpress.image.repository }}:{{ .Values.wordpress.image.tag }}"
+          imagePullPolicy: {{ .Values.wordpress.image.pullPolicy }}
+
+          resources:
+            {{- toYaml .Values.wordpress.resources | nindent 12 }}
+
+          securityContext:
+            allowPrivilegeEscalation: false
+
+          ports:
+            - name: http
+              containerPort: 80
+
+          volumeMounts:
+            - name: wordpress
+              mountPath: /var/www/html
+
+          env:
+            - name: WORDPRESS_DB_HOST
+              value: {{ printf "%s-mariadb:%v" (include "store.fullname" .) .Values.mariadb.service.port | quote }}
+
+            - name: WORDPRESS_DB_NAME
+              value: {{ .Values.mariadb.database | quote }}
+
+            - name: WORDPRESS_DB_USER
+              value: {{ .Values.mariadb.username | quote }}
+
+            - name: WORDPRESS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "store.secretName" . }}
+                  key: {{ .Values.secrets.keys.mariadbPassword }}
+
+          startupProbe:
+            httpGet:
+              path: /wp-admin/install.php
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+
+          readinessProbe:
+            httpGet:
+              path: /wp-admin/install.php
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /wp-admin/install.php
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+      volumes:
+        - name: wordpress
+          persistentVolumeClaim:
+            claimName: {{ include "store.fullname" . }}-wordpress
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "store.fullname" . }}-wordpress
+  labels:
+    {{- include "store.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.wordpress.persistence.storageClass }}
+  storageClassName: {{ .Values.wordpress.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.wordpress.persistence.size }}

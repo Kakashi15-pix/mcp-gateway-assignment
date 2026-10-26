@@ -1,0 +1,26 @@
+wordpress:
+  persistence:
+    size: 2Gi
+    storageClass: standard
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 384Mi
+
+mariadb:
+  persistence:
+    size: 2Gi
+    storageClass: standard
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 384Mi
+
+ingress:
+  host: shop.localhost

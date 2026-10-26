@@ -1,0 +1,6 @@
+apiVersion: v2
+name: platform
+description: Gateway, dashboard, Postgres, and MCP services for the store platform
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

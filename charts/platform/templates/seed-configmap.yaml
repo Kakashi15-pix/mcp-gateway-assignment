@@ -1,0 +1,101 @@
+{{- if .Values.seed.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "platform.fullname" . }}-seed
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+data:
+  seed.py: |
+    import json
+    import os
+    import sys
+    import time
+    import urllib.error
+    import urllib.request
+
+    sys.path.insert(0, os.getenv("APP_DIR", "/app"))
+
+    gateway = os.environ["GATEWAY_URL"].rstrip("/")
+    token = None
+
+
+    def log(message):
+        print(message, flush=True)
+
+
+    def request(method, path, body=None):
+        headers = {}
+        if token:
+            headers["Authorization"] = "Bearer " + token
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode()
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(
+            gateway + path,
+            data=data,
+            headers=headers,
+            method=method,
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as response:
+                payload = response.read().decode()
+                return response.status, json.loads(payload) if payload else {}
+        except urllib.error.HTTPError as exc:
+            return exc.code, {"detail": exc.read().decode()[:200]}
+
+
+    log("waiting for gateway at " + gateway)
+    for attempt in range(1, 31):
+        try:
+            status, _ = request("GET", "/readyz")
+            log(f"readyz attempt {attempt}: HTTP {status}")
+            if status == 200:
+                break
+        except OSError as exc:
+            log(f"readyz attempt {attempt}: {type(exc).__name__}")
+        time.sleep(5)
+    else:
+        sys.exit("gateway did not become ready")
+
+    import seed_admin  # creates or updates the first admin
+    seed_admin.main()
+    log("admin account ready")
+
+    status, body = request("POST", "/auth/login", {
+        "email": os.environ["ADMIN_EMAIL"],
+        "password": os.environ["ADMIN_PASSWORD"],
+    })
+    log(f"login: HTTP {status}")
+    if status != 200:
+        sys.exit("admin login failed")
+    token = body["access_token"]
+
+    servers = (
+        {"id": "woocommerce", "name": "WooCommerce", "url": os.environ["WOO_URL"]},
+        {"id": "filesystem", "name": "Filesystem", "url": os.environ["FS_URL"]},
+        {"id": "kubernetes", "name": "Kubernetes", "url": os.environ["K8S_URL"]},
+    )
+    for server in servers:
+        status, body = request("GET", "/admin/servers")
+        if status != 200:
+            sys.exit(f"could not list servers: HTTP {status}")
+        if not any(item["id"] == server["id"] for item in body["servers"]):
+            payload = dict(server, request_timeout_seconds=30, max_concurrent_requests=10)
+            status, body = request("POST", "/admin/servers", payload)
+            log(f"register {server['id']}: HTTP {status} {body.get('detail', '')}")
+            if status not in (200, 201, 409):
+                sys.exit(f"could not register {server['id']}")
+        for attempt in range(1, 13):
+            status, _ = request("POST", f"/admin/servers/{server['id']}/sync")
+            log(f"sync {server['id']} attempt {attempt}: HTTP {status}")
+            if status == 200:
+                break
+            time.sleep(5)
+        else:
+            sys.exit(f"discovery failed for {server['id']}")
+
+    import seed_permissions  # admin all; members list_ and get_
+    log("platform seed completed")
+{{- end }}

@@ -1,0 +1,250 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "store.fullname" . }}-bootstrap
+  labels:
+    {{- include "store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bootstrap
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": {{ .Values.bootstrap.hookDeletePolicy | quote }}
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        {{- include "store.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: bootstrap
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "store.bootstrapServiceAccount" . }}
+      initContainers:
+        - name: wordpress-bootstrap
+          image: "{{ .Values.bootstrap.image.repository }}:{{ .Values.bootstrap.image.tag }}"
+          imagePullPolicy: {{ .Values.bootstrap.image.pullPolicy }}
+          securityContext:
+            runAsUser: 0
+          resources:
+            {{- toYaml .Values.bootstrap.resources | nindent 12 }}
+          env:
+            - name: WORDPRESS_DB_HOST
+              value: {{ printf "%s-mariadb:%v" (include "store.fullname" .) .Values.mariadb.service.port | quote }}
+            - name: WORDPRESS_DB_NAME
+              value: {{ .Values.mariadb.database | quote }}
+            - name: WORDPRESS_DB_USER
+              value: {{ .Values.mariadb.username | quote }}
+            - name: WORDPRESS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "store.secretName" . }}
+                  key: {{ .Values.secrets.keys.mariadbPassword }}
+            - name: WP_ADMIN_USER
+              value: {{ .Values.wordpress.admin.username | quote }}
+            - name: WP_ADMIN_EMAIL
+              value: {{ .Values.wordpress.admin.email | quote }}
+            - name: WP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "store.secretName" . }}
+                  key: {{ .Values.secrets.keys.wordpressAdminPassword }}
+            - name: WP_SITE_URL
+              value: {{ default (printf "http://%s" .Values.ingress.host) .Values.wordpress.admin.siteUrl | quote }}
+            - name: WP_SITE_TITLE
+              value: {{ .Values.wordpress.admin.siteTitle | quote }}
+            # Existing API credentials, if a previous run stored them. Absent on first install.
+            - name: WC_CONSUMER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "store.fullname" . }}-wc-api
+                  key: {{ .Values.secrets.keys.consumerKey }}
+                  optional: true
+            - name: WC_CONSUMER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "store.fullname" . }}-wc-api
+                  key: {{ .Values.secrets.keys.consumerSecret }}
+                  optional: true
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+
+              WP_PATH="/var/www/html"
+              WP="wp --path=$WP_PATH"
+              mkdir -p "$WP_PATH/wp-content/upgrade" "$WP_PATH/wp-content/uploads"
+
+              # Wait for WordPress files and the database.
+              until [ -f "$WP_PATH/wp-includes/version.php" ]; do
+                sleep 3
+              done
+
+              cd "$WP_PATH"
+
+              until $WP db check --allow-root >/dev/null 2>&1; do
+                sleep 3
+              done
+
+              # Install WordPress only when it is not already installed.
+              if ! $WP core is-installed --allow-root; then
+                $WP core install \
+                  --url="$WP_SITE_URL" \
+                  --title="$WP_SITE_TITLE" \
+                  --admin_user="$WP_ADMIN_USER" \
+                  --admin_password="$WP_ADMIN_PASSWORD" \
+                  --admin_email="$WP_ADMIN_EMAIL" \
+                  --skip-email \
+                  --allow-root
+              fi
+
+              # Configure rewrite rules.
+              $WP rewrite structure '/%postname%/' --hard --allow-root
+              $WP rewrite flush --hard --allow-root
+
+              # Install and activate WooCommerce.
+              if ! $WP plugin is-installed woocommerce --allow-root; then
+                $WP plugin install woocommerce --allow-root
+              fi
+
+              $WP plugin activate woocommerce --allow-root
+
+              # Configure Cash on Delivery.
+              $WP eval '
+                update_option(
+                  "woocommerce_cod_settings",
+                  array(
+                    "enabled" => "yes",
+                    "title" => "Cash on Delivery",
+                    "description" => "Pay with cash on delivery.",
+                    "instructions" => "Pay when your order arrives."
+                  )
+                );
+              ' --allow-root
+
+              # Create configured sample pages if they do not exist.
+              {{- range .Values.bootstrap.samplePages }}
+              if ! $WP post list --post_type=page --name={{ .slug | quote }} --field=ID --allow-root | grep -q '[0-9]'; then
+                $WP post create \
+                  --post_type=page \
+                  --post_status=publish \
+                  --post_title={{ .title | quote }} \
+                  --post_name={{ .slug | quote }} \
+                  --post_content={{ .content | quote }} \
+                  --allow-root
+              fi
+              {{- end }}
+
+              # Reuse stored API credentials only if the key still exists in WooCommerce.
+              REUSE=0
+              if [ -n "${WC_CONSUMER_KEY:-}" ] && [ -n "${WC_CONSUMER_SECRET:-}" ]; then
+                FOUND="$($WP eval 'global $wpdb; echo (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}woocommerce_api_keys WHERE truncated_key = %s", substr(getenv("WC_CONSUMER_KEY"), -7)));' --allow-root | tail -n 1)"
+                if [ "$FOUND" = "1" ]; then
+                  REUSE=1
+                fi
+              fi
+
+              if [ "$REUSE" = "1" ]; then
+                printf '%s' "$WC_CONSUMER_KEY" > /work/consumer_key
+                printf '%s' "$WC_CONSUMER_SECRET" > /work/consumer_secret
+              else
+                $WP eval '
+                  $user = get_user_by("login", getenv("WP_ADMIN_USER"));
+
+                  if (!$user) {
+                    fwrite(STDERR, "WordPress admin user not found.\n");
+                    exit(1);
+                  }
+
+                  if (!class_exists("WooCommerce") || !class_exists("WC_Auth")) {
+                    fwrite(STDERR, "WooCommerce is not loaded.\n");
+                    exit(1);
+                  }
+
+                  global $wpdb;
+
+                  $consumer_key = "ck_" . wc_rand_hash();
+                  $consumer_secret = "cs_" . wc_rand_hash();
+
+                  $wpdb->insert(
+                    $wpdb->prefix . "woocommerce_api_keys",
+                    array(
+                      "user_id"         => $user->ID,
+                      "description"     => "MCP Gateway",
+                      "permissions"     => "read_write",
+                      "consumer_key"    => wc_api_hash($consumer_key),
+                      "consumer_secret" => $consumer_secret,
+                      "truncated_key"   => substr($consumer_key, -7)
+                    ),
+                    array("%d", "%s", "%s", "%s", "%s", "%s")
+                  );
+
+                  if ($wpdb->last_error) {
+                    fwrite(STDERR, "API key creation failed: " . $wpdb->last_error . "\n");
+                    exit(1);
+                  }
+
+                  file_put_contents("/work/consumer_key", $consumer_key);
+                  file_put_contents("/work/consumer_secret", $consumer_secret);
+                ' --allow-root
+              fi
+              chown -R 33:33 "$WP_PATH/wp-content"
+              chmod -R u+rwX,g+rX "$WP_PATH/wp-content"
+              chmod 644 /work/consumer_key /work/consumer_secret
+          volumeMounts:
+            - name: wordpress
+              mountPath: /var/www/html
+            - name: work
+              mountPath: /work
+
+      containers:
+        - name: store-api-key
+          image: "{{ .Values.bootstrap.kubectl.image.repository }}:{{ .Values.bootstrap.kubectl.image.tag }}"
+          imagePullPolicy: {{ .Values.bootstrap.kubectl.image.pullPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.bootstrap.kubectl.resources | nindent 12 }}
+          env:
+            - name: HOME
+              value: /tmp
+            - name: SECRET_NAME
+              value: {{ printf "%s-wc-api" (include "store.fullname" .) | quote }}
+            - name: CONSUMER_KEY_NAME
+              value: {{ .Values.secrets.keys.consumerKey | quote }}
+            - name: CONSUMER_SECRET_NAME
+              value: {{ .Values.secrets.keys.consumerSecret | quote }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+
+              until [ -s /work/consumer_key ] && [ -s /work/consumer_secret ]; do
+                sleep 2
+              done
+
+              KEY="$(cat /work/consumer_key)"
+              SECRET="$(cat /work/consumer_secret)"
+
+              if kubectl get secret "$SECRET_NAME" >/dev/null 2>&1; then
+                kubectl patch secret "$SECRET_NAME" --type merge \
+                  -p "{\"stringData\":{\"$CONSUMER_KEY_NAME\":\"$KEY\",\"$CONSUMER_SECRET_NAME\":\"$SECRET\"}}"
+              else
+                kubectl create secret generic "$SECRET_NAME" \
+                  --from-literal="$CONSUMER_KEY_NAME=$KEY" \
+                  --from-literal="$CONSUMER_SECRET_NAME=$SECRET"
+              fi
+          volumeMounts:
+            - name: work
+              mountPath: /work
+
+      volumes:
+        - name: wordpress
+          persistentVolumeClaim:
+            claimName: {{ include "store.fullname" . }}-wordpress
+        - name: work
+          emptyDir: {}

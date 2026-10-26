@@ -1,0 +1,95 @@
+nameOverride: ""
+fullnameOverride: ""
+
+images:
+  gateway: { repository: mcp-gateway, tag: "dev", pullPolicy: IfNotPresent }
+  dashboard: { repository: mcp-dashboard, tag: "dev", pullPolicy: IfNotPresent }
+  woo: { repository: woo-mcp, tag: "dev", pullPolicy: IfNotPresent }
+  filesystem: { repository: filesystem-mcp, tag: "dev", pullPolicy: IfNotPresent }
+  kubernetes: { repository: kubernetes-mcp, tag: "dev", pullPolicy: IfNotPresent }
+  postgres: { repository: postgres, tag: "16.4", pullPolicy: IfNotPresent }
+
+resources:
+  small:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 256Mi }
+  medium:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+  postgres:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 768Mi }
+
+postgres:
+  database: mcp_gateway
+  username: gateway_user
+  port: 5432
+  persistence:
+    size: 5Gi
+    storageClass: ""
+  existingSecret: ""
+  secretKeys:
+    password: postgres-password
+
+gateway:
+  replicas: 1
+  port: 9000
+  dashboardBaseUrl: http://dashboard.localhost
+  sessionTtlMinutes: "60"
+  llm:
+    baseUrl: ""
+    model: ""
+    existingSecret: platform-llm
+    keys:
+      apiKey: LLM_API_KEY
+  resources: medium
+
+dashboard:
+  replicas: 1
+  port: 8080
+  resources: medium
+
+woo:
+  replicas: 1
+  port: 8003
+  publicHost: store.localhost
+  secretName: store-wc-api
+  secretKeys:
+    consumerKey: woocommerce-consumer-key
+    consumerSecret: woocommerce-consumer-secret
+  resources: medium
+
+filesystem:
+  replicas: 1
+  port: 8002
+  resources: small
+
+kubernetes:
+  replicas: 1
+  port: 8001
+  resources: medium
+
+networkPolicy:
+  enabled: true
+  ingressNamespace: ingress-nginx
+
+ingress:
+  className: nginx
+  host: dashboard.localhost
+
+seed:
+  enabled: true
+  admin:
+    email: admin@example.invalid
+  secretName: ""
+  resources: small
+  image:
+    repository: mcp-gateway
+    tag: "dev"
+    pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: ""
+
+imagePullSecrets: []
