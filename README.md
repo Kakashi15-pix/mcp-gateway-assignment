@@ -531,7 +531,7 @@ Look for pending storage claims, image-pull failures, failed probes, missing Sec
 
 ## Limitations and next steps
 
-- The dashboard's Chat page is currently a placeholder; the backend chat endpoint should not be confused with a completed dashboard chat workflow.
+- The dashboard's Chat page is minimalistic; the backend chat endpoint is a completed dashboard chat workflow.
 - Rate limiting is in-memory and is not shared across gateway replicas.
 - Local image tags and sample IP/host values are development defaults and must be reviewed for other environments.
 - Before production use, review secret management, TLS, authorization policy, network policy, backups, resource limits, logging/monitoring, and Kubernetes RBAC.
